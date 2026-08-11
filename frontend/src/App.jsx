@@ -118,13 +118,7 @@ function App() {
   // Billing & Finance States
   const [allFlats, setAllFlats] = useState([]);
   const [billingExpanded, setBillingExpanded] = useState(false);
-  const [expenses, setExpenses] = useState([
-    { id: 1, title: 'Security Guard Salaries', amount: 3200, category: 'Staff Salary', date: '2026-08-01', notes: 'August 2026 payroll for 4 guards' },
-    { id: 2, title: 'Main Lift Repair (Tower B)', amount: 450, category: 'Repairs', date: '2026-08-03', notes: 'Fixed pulley and cable tension' },
-    { id: 3, title: 'Community Park Electricity', amount: 890, category: 'Electricity', date: '2026-07-28', notes: 'July usage bill' },
-    { id: 4, title: 'Water Tanker Supply', amount: 1200, category: 'Water Maintenance', date: '2026-07-15', notes: 'Emergency tankers due to main line leakage' },
-    { id: 5, title: 'Common Area Cleaning Services', amount: 750, category: 'Cleaning', date: '2026-07-31', notes: 'Monthly janitorial agency invoice' }
-  ]);
+  const [expenses, setExpenses] = useState([]);
   const [waterBills, setWaterBills] = useState(initialWaterReadings);
   const [paymentsList, setPaymentsList] = useState([]);
 

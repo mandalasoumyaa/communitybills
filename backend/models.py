@@ -44,6 +44,7 @@ class Flat(Base):
     resident_phone = Column(String, nullable=True)
     occupants_count = Column(Integer, default=0)
     meter_id = Column(String, nullable=True)
+    occupancy_type = Column(String, default="Owner")
     
     tower_id = Column(Integer, ForeignKey("towers.id"))
     tower = relationship("Tower", back_populates="flats")

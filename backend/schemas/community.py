@@ -9,6 +9,7 @@ class FlatBase(BaseModel):
     resident_phone: Optional[str] = None
     occupants_count: int = 0
     tower_id: int
+    occupancy_type: Optional[str] = "Owner"
 
 class FlatCreate(FlatBase):
     pass
@@ -19,6 +20,7 @@ class FlatUpdate(BaseModel):
     resident_name: Optional[str] = None
     resident_phone: Optional[str] = None
     occupants_count: Optional[int] = None
+    occupancy_type: Optional[str] = None
 
 class Flat(FlatBase):
     id: int

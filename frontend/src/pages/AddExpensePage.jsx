@@ -87,19 +87,9 @@ export default function AddExpensePage({ onBack, onExpenseCreated }) {
   // Load initial data
   useEffect(() => {
     async function init() {
-      // Seed initial dummy local storage items if empty
-      const localStored = localStorage.getItem('recentExpenses');
-      if (!localStored) {
-        const defaultRecents = [
-          { id: '1', category: 'electricity', amount: 9748.0, date: '2025-04-28', status: 'Paid' },
-          { id: '2', category: 'water_tanker', amount: 6000.0, date: '2025-04-25', status: 'Paid' },
-          { id: '3', category: 'security', amount: 18500.0, date: '2025-04-25', status: 'Paid' },
-        ];
-        localStorage.setItem('recentExpenses', JSON.stringify(defaultRecents));
-        setRecentExpenses(defaultRecents);
-      } else {
-        setRecentExpenses(JSON.parse(localStored));
-      }
+      // Clear localStorage of mock values and start empty
+      localStorage.removeItem('recentExpenses');
+      setRecentExpenses([]);
 
       try {
         const [cats, recents] = await Promise.all([
@@ -110,7 +100,7 @@ export default function AddExpensePage({ onBack, onExpenseCreated }) {
         setRecentExpenses(recents);
         localStorage.setItem('recentExpenses', JSON.stringify(recents));
       } catch (err) {
-        showToast('Running with local storage mock backup values.', 'info');
+        showToast('Running with empty local storage backup.', 'info');
       }
     }
     init();

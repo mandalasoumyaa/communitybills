@@ -174,14 +174,10 @@ export default function CommunityPage({
             </div>
           </div>
 
-          <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-4 text-center">
+          <div className="border-t border-slate-100 pt-4 text-center">
             <div>
               <span className="text-xs text-slate-400 font-semibold">Residents (Families)</span>
               <p className="text-base font-bold text-slate-800 mt-0.5">{communityOverview.total_residents}</p>
-            </div>
-            <div>
-              <span className="text-xs text-slate-400 font-semibold">Active Staff</span>
-              <p className="text-base font-bold text-slate-800 mt-0.5">8 Members</p>
             </div>
           </div>
         </div>

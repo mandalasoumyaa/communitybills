@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { 
-  FileText, 
-  Layers, 
+import {
+  FileText,
+  Layers,
   Droplet,
   CreditCard,
-  PieChart, 
-  DollarSign, 
-  BarChart3 
+  PieChart,
+  DollarSign,
+  BarChart3
 } from 'lucide-react';
 import ManageExpensesPage from './ManageExpensesPage';
 import CalculateWaterBillPage from './CalculateWaterBillPage';
@@ -66,11 +66,10 @@ export default function BillingFinancePage({
               <button
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl font-semibold text-xs transition-all ${
-                  isTabActive
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl font-semibold text-xs transition-all ${isTabActive
                     ? 'bg-indigo-50 text-[#6366f1] shadow-sm'
                     : 'text-slate-500 hover:bg-slate-550 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 <TabIcon className={`h-4 w-4 ${isTabActive ? 'text-[#6366f1]' : 'text-slate-400'}`} />
                 {tab.label}

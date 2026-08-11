@@ -21,50 +21,7 @@ CATEGORIES = [
     ExpenseCategory(id="other", name="Other", icon="other"),
 ]
 
-EXPENSES_DB = [
-    ExpenseResponse(
-        id=str(uuid.uuid4()),
-        category="security",
-        date=date(2025, 4, 25),
-        amount=18500.0,
-        paymentMode="Bank Transfer",
-        vendor="Security Agency",
-        referenceNumber="REF-SEC-0425",
-        paidFromAccount="SBI - Main Account",
-        apartment="All",
-        description="Security Agency Monthly Payment",
-        recurring=True,
-        status="Paid"
-    ),
-    ExpenseResponse(
-        id=str(uuid.uuid4()),
-        category="water_tanker",
-        date=date(2025, 4, 25),
-        amount=6000.0,
-        paymentMode="Cash",
-        vendor="Water Supply Corp",
-        referenceNumber="REF-WAT-0425",
-        paidFromAccount="Petty Cash",
-        apartment="Block A",
-        description="5 Water Tankers",
-        recurring=False,
-        status="Paid"
-    ),
-    ExpenseResponse(
-        id=str(uuid.uuid4()),
-        category="electricity",
-        date=date(2025, 4, 28),
-        amount=9748.0,
-        paymentMode="Bank Transfer",
-        vendor="TSNPDCL",
-        referenceNumber="EB/2025/04/1102",
-        paidFromAccount="SBI - Main Account",
-        apartment="Common Area",
-        description="Electricity bill for Common Area",
-        recurring=True,
-        status="Paid"
-    ),
-]
+EXPENSES_DB = []
 
 @router.get("/expense-categories", response_model=List[ExpenseCategory])
 def get_categories():
