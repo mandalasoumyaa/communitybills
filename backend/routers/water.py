@@ -16,6 +16,7 @@ def read_water_readings(
     limit: int = 100,
     sort_col: str = "apartment_number",
     sort_dir: str = "asc",
+    community_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -23,7 +24,8 @@ def read_water_readings(
     """
     readings, total = crud.get_water_readings(
         db, month=month, search=search, floor=floor, status=status,
-        skip=skip, limit=limit, sort_col=sort_col, sort_dir=sort_dir
+        skip=skip, limit=limit, sort_col=sort_col, sort_dir=sort_dir,
+        community_id=community_id
     )
     
     # Format response

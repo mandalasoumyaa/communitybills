@@ -1,8 +1,17 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from typing import List
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from typing import List, Optional
 from datetime import date, datetime
 import uuid
 import time
+from sqlalchemy.orm import Session
+
+try:
+    from backend.database import get_db
+    from backend import models
+except ModuleNotFoundError:
+    from database import get_db
+    import models
+
 try:
     from backend.schemas import ExpenseCategory, ExpenseCreate, ExpenseResponse, OcrResponse, AiSuggestionResponse
 except ModuleNotFoundError:
@@ -21,22 +30,23 @@ CATEGORIES = [
     ExpenseCategory(id="other", name="Other", icon="other"),
 ]
 
-EXPENSES_DB = []
-
 @router.get("/expense-categories", response_model=List[ExpenseCategory])
 def get_categories():
     return CATEGORIES
 
 @router.get("/expenses", response_model=List[ExpenseResponse])
-def get_expenses():
-    # Return last 5 expenses, sorted by date descending
-    sorted_expenses = sorted(EXPENSES_DB, key=lambda x: x.date, reverse=True)
-    return sorted_expenses[:5]
+def get_expenses(community_id: Optional[int] = None, db: Session = Depends(get_db)):
+    query = db.query(models.Expense)
+    if community_id is not None:
+        query = query.filter(models.Expense.community_id == community_id)
+    expenses = query.order_by(models.Expense.date.desc()).all()
+    return expenses
 
 @router.post("/expenses", response_model=ExpenseResponse)
-def create_expense(expense: ExpenseCreate):
-    new_expense = ExpenseResponse(
+def create_expense(expense: ExpenseCreate, db: Session = Depends(get_db)):
+    new_expense = models.Expense(
         id=str(uuid.uuid4()),
+        community_id=expense.community_id,
         category=expense.category,
         date=expense.date,
         amount=expense.amount,
@@ -49,10 +59,22 @@ def create_expense(expense: ExpenseCreate):
         notes=expense.notes,
         recurring=expense.recurring,
         receiptUrl=expense.receiptUrl,
-        status="Paid"  # default status
+        status="Paid"
     )
-    EXPENSES_DB.append(new_expense)
+    db.add(new_expense)
+    db.commit()
+    db.refresh(new_expense)
     return new_expense
+
+@router.delete("/expenses/{expense_id}")
+def delete_expense(expense_id: str, db: Session = Depends(get_db)):
+    db_expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
+    if not db_expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    db.delete(db_expense)
+    db.commit()
+    return {"message": "Expense deleted successfully"}
+
 
 @router.post("/upload-receipt")
 async def upload_receipt(file: UploadFile = File(...)):

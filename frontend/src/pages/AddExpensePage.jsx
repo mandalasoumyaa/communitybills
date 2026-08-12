@@ -33,7 +33,7 @@ import PaymentInformationSection from '../components/PaymentInformationSection';
 import { RotateCcw, Save, ChevronDown } from 'lucide-react';
 import { expenseService } from '../services/api';
 
-export default function AddExpensePage({ onBack, onExpenseCreated }) {
+export default function AddExpensePage({ onBack, onExpenseCreated, currentCommunityId }) {
   const [categories, setCategories] = useState([]);
   const [recentExpenses, setRecentExpenses] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('electricity'); // default select electricity as shown in mockup
@@ -205,7 +205,8 @@ export default function AddExpensePage({ onBack, onExpenseCreated }) {
             paymentMode: item.paymentMode,
             paidFromAccount: item.paidFromAccount,
             date: item.date,
-            receiptUrl: item.rawValues?.receiptUrl || null
+            receiptUrl: item.rawValues?.receiptUrl || null,
+            community_id: currentCommunityId
           };
           return expenseService.createExpense(payload);
         })
@@ -455,24 +456,16 @@ export default function AddExpensePage({ onBack, onExpenseCreated }) {
         otherExpenseCategory: finalOtherExpenseCategory,
         category: selectedCategory,
         amount: cleanAmt,
-        receiptUrl: receiptUrl || null
+        receiptUrl: receiptUrl || null,
+        community_id: currentCommunityId
       };
 
-      await expenseService.createExpense(payload);
+      const created = await expenseService.createExpense(payload);
       showToast('Expense created successfully!', 'success');
-      if (onExpenseCreated) {
-        onExpenseCreated(newExpense);
-      }
-    } catch (error) {
-      console.warn('API save failed, using local storage fallback', error);
-      showToast('Saved to Local Storage successfully!', 'success');
-      if (onExpenseCreated) {
-        onExpenseCreated(newExpense);
-      }
-    } finally {
-      // Always update local list for immediate visual update
+      
+      // Update local storage backup for recent expenses
       const existing = JSON.parse(localStorage.getItem('recentExpenses') || '[]');
-      const updated = [newExpense, ...existing];
+      const updated = [created, ...existing];
       localStorage.setItem('recentExpenses', JSON.stringify(updated));
       setRecentExpenses(updated);
 
@@ -492,6 +485,14 @@ export default function AddExpensePage({ onBack, onExpenseCreated }) {
       setSelectedCategory('electricity');
       setReceiptUrl('');
       setAiSuggestions(null);
+
+      if (onExpenseCreated) {
+        onExpenseCreated(created);
+      }
+    } catch (error) {
+      console.error('API save failed', error);
+      showToast('Error saving expense: ' + (error.message || 'Server error'), 'error');
+    } finally {
       setIsSubmitting(false);
     }
   };

@@ -11,8 +11,9 @@ import {
   Receipt
 } from 'lucide-react';
 import AddExpensePage from '../pages/AddExpensePage';
+import { expenseService } from '../services/api';
 
-export default function ManageExpensesPage({ expenses, setExpenses }) {
+export default function ManageExpensesPage({ expenses, setExpenses, currentCommunityId }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterMonth, setFilterMonth] = useState('All');
@@ -29,9 +30,10 @@ export default function ManageExpensesPage({ expenses, setExpenses }) {
     return (
       <AddExpensePage
         onBack={() => setShowAddForm(false)}
+        currentCommunityId={currentCommunityId}
         onExpenseCreated={(newExp) => {
           const formatted = {
-            id: Date.now(),
+            id: newExp.id,
             title: newExp.vendor || newExp.description || 'Expense',
             amount: newExp.amount,
             category: newExp.category.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -71,9 +73,23 @@ export default function ManageExpensesPage({ expenses, setExpenses }) {
     setShowAddForm(false);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (confirm('Are you sure you want to delete this expense?')) {
-      setExpenses(expenses.filter(exp => exp.id !== id));
+      try {
+        await expenseService.deleteExpense(id);
+        const backendExpenses = await expenseService.getExpenses();
+        const formatted = backendExpenses.map(exp => ({
+          id: exp.id,
+          title: exp.vendor || exp.description || 'Expense',
+          amount: exp.amount,
+          category: exp.category.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          date: exp.date,
+          notes: exp.description || exp.notes || '-'
+        }));
+        setExpenses(formatted);
+      } catch (err) {
+        alert('Failed to delete expense: ' + err.message);
+      }
     }
   };
 
@@ -116,7 +132,7 @@ export default function ManageExpensesPage({ expenses, setExpenses }) {
           </div>
           <div>
             <span className="text-xs text-slate-400 font-semibold tracking-wider uppercase">Filtered Expenses Total</span>
-            <h3 className="text-xl font-bold text-slate-800 mt-0.5">${totalFilteredAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+            <h3 className="text-xl font-bold text-slate-800 mt-0.5">₹{totalFilteredAmount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
           </div>
         </div>
         <div className="bg-white border border-slate-155 p-3 rounded-xl flex items-center gap-3 shadow-sm">
@@ -125,7 +141,7 @@ export default function ManageExpensesPage({ expenses, setExpenses }) {
           </div>
           <div>
             <span className="text-xs text-slate-400 font-semibold tracking-wider uppercase">Total Recorded Expenses</span>
-            <h3 className="text-xl font-bold text-slate-800 mt-0.5">${totalAllTime.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+            <h3 className="text-xl font-bold text-slate-800 mt-0.5">₹{totalAllTime.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</h3>
           </div>
         </div>
         <div className="bg-white border border-slate-155 p-3 rounded-xl flex items-center gap-3 shadow-sm">
@@ -156,7 +172,7 @@ export default function ManageExpensesPage({ expenses, setExpenses }) {
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 block mb-1">Amount ($)</label>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">Amount (₹)</label>
               <input
                 type="number"
                 step="0.01"
@@ -288,7 +304,7 @@ export default function ManageExpensesPage({ expenses, setExpenses }) {
                       {exp.notes || '-'}
                     </td>
                     <td className="py-1.5 font-bold text-slate-800 text-right">
-                      ${exp.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                      ₹{exp.amount.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                     </td>
                     <td className="py-1.5 pr-4 text-center">
                       <button

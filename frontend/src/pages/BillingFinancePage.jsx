@@ -25,7 +25,9 @@ export default function BillingFinancePage({
   setWaterBills,
   paymentsList,
   setPaymentsList,
-  addLog
+  addLog,
+  currentCommunityId,
+  communityOverview
 }) {
   const [activeSubTab, setActiveSubTab] = useState('payments');
   const [sharedMonth, setSharedMonth] = useState('2026-05');
@@ -102,6 +104,7 @@ export default function BillingFinancePage({
           <ManageExpensesPage
             expenses={expenses}
             setExpenses={setExpenses}
+            currentCommunityId={currentCommunityId}
           />
         )}
 
@@ -114,12 +117,15 @@ export default function BillingFinancePage({
             addLog={addLog}
             sharedMonth={sharedMonth}
             setSharedMonth={setSharedMonth}
+            currentCommunityId={currentCommunityId}
+            communityName={communityOverview?.name}
           />
         )}
 
         {activeSubTab === 'monthly-expenses' && (
           <MonthlyExpensesPage
             expenses={expenses}
+            communityOverview={communityOverview}
           />
         )}
 

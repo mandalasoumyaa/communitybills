@@ -8,6 +8,7 @@ class ExpenseCategory(BaseModel):
     icon: str  # Name of the icon, e.g. "electricity", "water", etc.
 
 class ExpenseCreate(BaseModel):
+    community_id: Optional[int] = None
     category: str
     date: date
     amount: float
@@ -23,6 +24,7 @@ class ExpenseCreate(BaseModel):
 
 class ExpenseResponse(BaseModel):
     id: str
+    community_id: Optional[int] = None
     category: str
     date: date
     amount: float

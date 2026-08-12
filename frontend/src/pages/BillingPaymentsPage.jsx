@@ -63,6 +63,52 @@ export default function BillingPaymentsPage({
     remarks: ''
   });
 
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  const isDropdownClicking = useRef(false);
+
+  useEffect(() => {
+    function handleClickOutsideDropdown(event) {
+      if (activeDropdown && !event.target.closest('.payment-dropdown-container')) {
+        setActiveDropdown(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutsideDropdown);
+    return () => document.removeEventListener('mousedown', handleClickOutsideDropdown);
+  }, [activeDropdown]);
+
+  const getPaymentMethodIcon = (mode) => {
+    if (mode === 'Cash') return '💵';
+    if (mode === 'UPI') return '📱';
+    if (mode === 'Bank Transfer') return '🏦';
+    return '⋮';
+  };
+
+  const handleSelectPaymentMethod = (flatId, colKey, mode) => {
+    const item = flatPayments.find(f => f.id === flatId);
+    if (!item) return;
+
+    const editValue = (editedPayments[flatId] && colKey in editedPayments[flatId])
+      ? editedPayments[flatId][colKey]
+      : (item[colKey] === 0 ? '' : item[colKey].toString());
+
+    const amount = parseFloat(editValue);
+    const todayYMD = new Date().toISOString().split('T')[0];
+
+    setRecordModalData({
+      flatId,
+      flatNumber: item.number,
+      paidBy: colKey === 'paidByResident' ? 'Resident' : 'Owner',
+      amount: isNaN(amount) ? 0 : amount,
+      colKey: colKey,
+      mode: mode,
+      date: todayYMD,
+      txId: '',
+      remarks: ''
+    });
+    setShowRecordModal(true);
+  };
+
+
   const getFlatInitialPayments = (flat) => {
     const isCompleted = flat.status === 'Paid';
     const waterCost = flat.waterCost || 0;
@@ -78,18 +124,10 @@ export default function BillingPaymentsPage({
         ]
       };
     } else {
-      const resPaidVal = 3000;
-      const ownPaidVal = 5000;
-      const flatNumClean = String(flat.number || '').replace(/[-\s]/g, '');
-      const cashPaidVal = (flatNumClean === '101' || flatNumClean === 'A101') ? 579 : Math.max(0, waterCost - resPaidVal);
       return {
-        resident: resPaidVal + cashPaidVal,
-        owner: ownPaidVal,
-        history: [
-          { date: '08 Jan 2026', paidBy: 'Resident', mode: 'UPI', amount: resPaidVal, txId: 'UPI456789', remarks: '--' },
-          { date: '09 Jan 2026', paidBy: 'Owner', mode: 'Bank Transfer', amount: ownPaidVal, txId: 'TXN984562', remarks: '--' },
-          { date: '12 Jan 2026', paidBy: 'Resident', mode: 'Cash', amount: cashPaidVal, txId: 'CASH001', remarks: '--' }
-        ]
+        resident: 0,
+        owner: 0,
+        history: []
       };
     }
   };
@@ -103,7 +141,9 @@ export default function BillingPaymentsPage({
   const getBillPayments = (item, selectedMonth) => {
     const waterCost = item.waterCost || 0;
     const maintenance = item.maintenance || 3000;
-    const totalPayable = waterCost + maintenance;
+    const residentArrear = item.residentArrear || 0;
+    const ownerArrear = item.ownerArrear || 0;
+    const totalPayable = item.totalPayable || (waterCost + maintenance + residentArrear + ownerArrear);
 
     const history = getFlatPaymentHistory(item);
     const resPayments = history.filter(h => h.paidBy === 'Resident');
@@ -121,16 +161,16 @@ export default function BillingPaymentsPage({
     return {
       waterCost,
       maintenance,
-      residentArrear: 0,
-      ownerArrear: 0,
+      residentArrear,
+      ownerArrear,
       totalPayable,
       resPayment: { amount: resPaid, mode: lastRes.mode, txId: lastRes.txId, date: lastRes.date, remarks: lastRes.remarks },
       ownPayment: { amount: ownPaid, mode: lastOwn.mode, txId: lastOwn.txId, date: lastOwn.date, remarks: lastOwn.remarks },
       history,
       totalPaid,
       outstanding,
-      nextResArrear: outstanding,
-      nextOwnArrear: 0
+      nextResArrear: item.arrearNextMonthResident !== undefined ? item.arrearNextMonthResident : outstanding,
+      nextOwnArrear: item.arrearNextMonthOwner !== undefined ? item.arrearNextMonthOwner : 0
     };
   };
 
@@ -280,7 +320,7 @@ export default function BillingPaymentsPage({
     waterCost: true,
     maintenance: true,
     currentMonthTotal: true,
-    carrierAmount: true,
+    carriedAmount: true,
     residentArrear: true,
     ownerArrear: true,
     totalPayable: true,
@@ -300,7 +340,7 @@ export default function BillingPaymentsPage({
     { key: 'waterCost', label: 'Water Cost (₹)' },
     { key: 'maintenance', label: 'Maintenance (₹)' },
     { key: 'currentMonthTotal', label: 'Current Month Total (₹)' },
-    { key: 'carrierAmount', label: 'Carrier Amount (₹)' },
+    { key: 'carriedAmount', label: 'Carried Amount (₹)' },
     { key: 'residentArrear', label: 'Resident Arrear (₹)' },
     { key: 'ownerArrear', label: 'Owner Arrear (₹)' },
     { key: 'totalPayable', label: 'Total Payable (₹)' },
@@ -419,10 +459,10 @@ export default function BillingPaymentsPage({
       const maintenance = 3000;
       const currentMonthTotal = waterCost + maintenance;
 
-      // For the table view, only show custom recorded payments so that they start blank (0)
-      const customOnly = customPayments[flat.id] || [];
-      let paidByResident = customOnly.filter(h => h.paidBy === 'Resident').reduce((sum, h) => sum + h.amount, 0);
-      let paidByOwner = customOnly.filter(h => h.paidBy === 'Owner').reduce((sum, h) => sum + h.amount, 0);
+      // Use the full payment history (initial + custom) as the single source of truth
+      const history = getFlatPaymentHistory(flat);
+      let paidByResident = history.filter(h => h.paidBy === 'Resident').reduce((sum, h) => sum + h.amount, 0);
+      let paidByOwner = history.filter(h => h.paidBy === 'Owner').reduce((sum, h) => sum + h.amount, 0);
 
       // Seed outstanding arrears/payments matching screenshot structure
       let residentArrear = 0;
@@ -452,8 +492,8 @@ export default function BillingPaymentsPage({
         ownerArrear = flatSaved.ownerArrear;
       }
 
-      const carrierAmount = residentArrear + ownerArrear;
-      const totalPayable = currentMonthTotal + carrierAmount;
+      const carriedAmount = residentArrear + ownerArrear;
+      const totalPayable = currentMonthTotal + carriedAmount;
       const totalPaid = paidByResident + paidByOwner;
 
       let status = 'Pending';
@@ -484,7 +524,7 @@ export default function BillingPaymentsPage({
         waterCost,
         maintenance,
         currentMonthTotal,
-        carrierAmount,
+        carriedAmount,
         residentArrear,
         ownerArrear,
         totalPayable,
@@ -534,7 +574,7 @@ export default function BillingPaymentsPage({
       acc.waterCost += curr.waterCost;
       acc.maintenance += curr.maintenance;
       acc.currentMonthTotal += curr.currentMonthTotal;
-      acc.carrierAmount += curr.carrierAmount;
+      acc.carriedAmount += curr.carriedAmount;
       acc.residentArrear += curr.residentArrear;
       acc.ownerArrear += curr.ownerArrear;
       acc.totalPayable += curr.totalPayable;
@@ -546,7 +586,7 @@ export default function BillingPaymentsPage({
       acc.balance += curr.balance;
       return acc;
     }, {
-      waterCost: 0, maintenance: 0, currentMonthTotal: 0, carrierAmount: 0, residentArrear: 0, ownerArrear: 0,
+      waterCost: 0, maintenance: 0, currentMonthTotal: 0, carriedAmount: 0, residentArrear: 0, ownerArrear: 0,
       totalPayable: 0, paidByResident: 0, paidByOwner: 0, totalPaid: 0, arrearNextMonthOwner: 0, arrearNextMonthResident: 0, balance: 0
     });
   }, [filteredPayments]);
@@ -830,31 +870,59 @@ export default function BillingPaymentsPage({
       {/* DETAILED FINANCE TABLE */}
       <div className="bg-white border border-slate-150 rounded-[18px] shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs min-w-[1400px]">
+          <table className="w-full text-left border-collapse min-w-[1400px]">
             <thead>
-              <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-450 tracking-wider bg-slate-50/40">
-                <th className="py-3 pl-4 pr-2 border-r border-slate-200/80">Flat No</th>
-                <th className="py-3 px-2 border-r border-slate-200/80">Resident Name (₹)</th>
+              <tr className="border-b border-slate-200 text-[13px] font-semibold text-slate-800 tracking-tight bg-slate-50/60 leading-snug">
+                <th className="py-3.5 pl-4 pr-2 border-r border-slate-200/80 text-left font-bold text-slate-900 w-[80px]">Flat<br/>No</th>
+                <th className="py-3.5 px-3 border-r border-slate-200/80 text-left font-bold text-slate-900 min-w-[150px]">Occupant /<br/>Contact</th>
 
                 {columnDefs.map(col => {
                   if (!columnsVisibility[col.key]) return null;
+
+                  // Format header wrapping dynamically
+                  let headerContent = <div>{col.label}</div>;
+                  if (col.label.includes(' (Next Month)')) {
+                    const base = col.label.replace(' (Next Month)', '');
+                    headerContent = (
+                      <div>
+                        <div>{base}</div>
+                        <div className="text-[11px] text-slate-400 font-semibold">(Next Month)</div>
+                      </div>
+                    );
+                  } else {
+                    const parts = col.label.split(' (₹)');
+                    if (parts.length > 1) {
+                      headerContent = (
+                        <div>
+                          <div>{parts[0]}</div>
+                          <div className="text-[11px] text-slate-400 font-semibold">(₹)</div>
+                        </div>
+                      );
+                    }
+                  }
+
                   return (
-                    <th key={col.key} className="py-3 text-right px-2 border-r border-slate-200/80">
-                      {col.label}
+                    <th key={col.key} className="py-3.5 text-right px-3 border-r border-slate-200/80 font-bold text-slate-900">
+                      {headerContent}
                     </th>
                   );
                 })}
-                <th className="py-3 px-2 text-center text-slate-450">View Bill</th>
+                <th className="py-3.5 px-3 text-center text-slate-900 font-bold w-[100px]">View<br/>Bill</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50 font-medium text-slate-800">
+            <tbody className="divide-y divide-slate-50 font-medium text-slate-800 text-[13px]">
               {paginatedList.map((item) => (
                 <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${item.isEdited ? 'bg-amber-50/30 border-l-4 border-l-amber-500' : ''}`}>
-                  <td className="py-3 pl-4 pr-2 font-bold text-slate-900 border-r border-slate-100">{item.number}</td>
-                  <td className="py-3 px-2 text-slate-700 font-semibold border-r border-slate-100 flex items-center min-h-[38px]">
-                    <span className={`inline-block w-2 h-2 rounded-full mr-2 ${item.residentType === 'Owner' ? 'bg-[#22C55E]' : 'bg-[#3B82F6]'
-                      }`}></span>
-                    {item.residentName}
+                  <td className="py-2.5 pl-4 pr-2 font-bold text-[14px] text-slate-900 border-r border-slate-100 w-[80px]">{item.number}</td>
+                  <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100 min-w-[150px] leading-tight text-left">
+                    <div className="flex items-center text-[14px] font-semibold text-slate-900">
+                      <span className={`inline-block w-2 h-2 rounded-full mr-2 shrink-0 ${item.residentType === 'Owner' ? 'bg-[#22C55E]' : 'bg-[#3B82F6]'
+                        }`}></span>
+                      {item.residentName}
+                    </div>
+                    <div className="text-[12px] text-slate-400 font-normal mt-0.5 ml-4">
+                      {item.residentPhone || '9876543210'}
+                    </div>
                   </td>
 
                   {columnDefs.map(col => {
@@ -862,16 +930,17 @@ export default function BillingPaymentsPage({
 
                     let content = null;
                     const isEditable = ['paidByResident', 'paidByOwner', 'residentArrear', 'ownerArrear'].includes(col.key);
-
                     if (isEditable) {
                       const editValue = (editedPayments[item.id] && col.key in editedPayments[item.id])
                         ? editedPayments[item.id][col.key]
                         : (item[col.key] === 0 ? '' : item[col.key].toString());
 
+                      const isResOrOwn = col.key === 'paidByResident' || col.key === 'paidByOwner';
+
                       content = (
-                        <div className="flex flex-col items-end gap-1 w-full min-w-[120px]">
-                          <div className="relative flex items-center w-full">
-                            <span className="absolute left-2.5 text-slate-400 font-semibold text-[11px] select-none">₹</span>
+                        <div className="flex flex-col items-end gap-1 w-full max-w-[130px] mx-auto">
+                          <div className={`relative flex items-center w-full ${isResOrOwn ? 'payment-dropdown-container' : ''}`}>
+                            <span className="absolute left-2.5 text-slate-400 font-semibold text-[13px] select-none">₹</span>
                             <input
                               type="text"
                               placeholder="Enter Amount"
@@ -886,18 +955,87 @@ export default function BillingPaymentsPage({
                               }}
                               onBlur={(e) => {
                                 if (col.key === 'paidByResident' || col.key === 'paidByOwner') {
-                                  handleTriggerRecordPayment(item.id, col.key, e.target.value);
+                                  setTimeout(() => {
+                                    if (isDropdownClicking.current) {
+                                      isDropdownClicking.current = false;
+                                      return;
+                                    }
+                                    const val = e.target.value;
+                                    if (val && parseFloat(val) > 0) {
+                                      handleTriggerRecordPayment(item.id, col.key, val);
+                                    }
+                                  }, 150);
                                 }
                               }}
-                              className="pl-6 pr-2.5 py-1.5 w-full border border-slate-200 rounded-xl text-right text-xs focus:outline-none focus:border-[#5B5CEB] bg-white font-bold text-slate-700 shadow-xs"
+                              className={`pl-6 ${isResOrOwn ? 'pr-7' : 'pr-2.5'} h-10 w-full border border-slate-200 rounded-[12px] text-right text-[13px] focus:outline-none focus:border-[#5B5CEB] bg-white font-semibold text-slate-700 shadow-3xs`}
                             />
+                            {isResOrOwn && (() => {
+                              const history = getFlatPaymentHistory(item);
+                              const isRes = col.key === 'paidByResident';
+                              const paymentsOfType = history.filter(h => h.paidBy === (isRes ? 'Resident' : 'Owner'));
+                              const lastPayment = paymentsOfType[paymentsOfType.length - 1];
+                              const lastMode = lastPayment ? lastPayment.mode : null;
+                              return (
+                                <>
+                                  <button
+                                    type="button"
+                                    onMouseDown={() => { isDropdownClicking.current = true; }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveDropdown(activeDropdown && activeDropdown.flatId === item.id && activeDropdown.colKey === col.key ? null : { flatId: item.id, colKey: col.key });
+                                    }}
+                                    className="absolute right-2 text-slate-500 hover:text-[#5B5CEB] text-xs focus:outline-none cursor-pointer select-none"
+                                  >
+                                    {getPaymentMethodIcon(lastMode)}
+                                  </button>
+                                  {activeDropdown && activeDropdown.flatId === item.id && activeDropdown.colKey === col.key && (
+                                    <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 min-w-[140px] text-left">
+                                      <div className="text-[9px] font-bold text-slate-400 uppercase px-2 py-1 select-none border-b border-slate-100 mb-1">Select Payment Method</div>
+                                      <button
+                                        type="button"
+                                        onMouseDown={() => { isDropdownClicking.current = true; }}
+                                        onClick={() => {
+                                          handleSelectPaymentMethod(item.id, col.key, 'Cash');
+                                          setActiveDropdown(null);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer text-slate-700"
+                                      >
+                                        <span>💵</span> Cash
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onMouseDown={() => { isDropdownClicking.current = true; }}
+                                        onClick={() => {
+                                          handleSelectPaymentMethod(item.id, col.key, 'UPI');
+                                          setActiveDropdown(null);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer text-slate-700"
+                                      >
+                                        <span>📱</span> UPI
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onMouseDown={() => { isDropdownClicking.current = true; }}
+                                        onClick={() => {
+                                          handleSelectPaymentMethod(item.id, col.key, 'Bank Transfer');
+                                          setActiveDropdown(null);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 hover:bg-slate-50 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer text-slate-700"
+                                      >
+                                        <span>🏦</span> Bank Transfer
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                           {item.hasError && (col.key === 'paidByResident' || col.key === 'paidByOwner') && (item.totalPaid > item.totalPayable) && (
                             <span className="text-[9px] text-red-500 font-bold leading-tight text-right w-full block max-w-[150px]">
                               Entered amount cannot exceed the payable amount.
                             </span>
                           )}
-                          {item.hasError && (col.key === 'carrierAmount' || col.key === 'residentArrear' || col.key === 'ownerArrear') && (Math.abs(item.residentArrear + item.ownerArrear - item.carrierAmount) > 0.01) && (
+                          {item.hasError && (col.key === 'carriedAmount' || col.key === 'residentArrear' || col.key === 'ownerArrear') && (Math.abs(item.residentArrear + item.ownerArrear - item.carriedAmount) > 0.01) && (
                             <span className="text-[9px] text-red-500 font-bold leading-tight text-right w-full block max-w-[150px]">
                               Resident Arrear + Owner Arrear must equal Carried Amount.
                             </span>
@@ -917,17 +1055,17 @@ export default function BillingPaymentsPage({
                     }
 
                     let textClass = 'text-slate-700';
-                    if (col.key === 'totalPayable') textClass = 'text-[#5B5CEB] font-extrabold';
+                    if (col.key === 'totalPayable') textClass = 'text-[#5B5CEB] font-bold';
                     else if (col.key === 'totalPaid') textClass = 'text-emerald-600 font-bold';
-                    else if (col.key === 'balance') textClass = 'text-rose-600 font-bold';
+                    else if (col.key === 'balance') textClass = item.balance > 0 ? 'text-rose-600 font-bold' : 'text-slate-700 font-semibold';
 
                     return (
-                      <td key={col.key} className={`py-3 text-right px-2 border-r border-slate-100 font-bold ${textClass}`}>
+                      <td key={col.key} className={`py-2.5 text-right px-3 border-r border-slate-100 font-semibold ${textClass}`}>
                         {content}
                       </td>
                     );
                   })}
-                  <td className="py-3 px-2 text-center">
+                  <td className="py-2.5 px-3 text-center w-[100px]">
                     <button
                       onClick={() => handleOpenViewBill(item)}
                       className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#5B5CEB] font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer mx-auto transition-colors"
@@ -940,7 +1078,7 @@ export default function BillingPaymentsPage({
               ))}
 
               {/* GRAND TOTAL SUMMARY ROW */}
-              <tr className="bg-slate-100/50 font-extrabold text-slate-900 border-t-2 border-slate-200">
+              <tr className="bg-slate-100/50 font-extrabold text-slate-900 border-t-2 border-slate-200 text-[13px]">
                 <td className="py-3.5 pl-4 pr-2 border-r border-slate-200" colSpan="2">Total</td>
 
                 {columnDefs.map(col => {
@@ -957,12 +1095,12 @@ export default function BillingPaymentsPage({
                   else if (col.key === 'balance') textClass = 'text-rose-600 font-black';
 
                   return (
-                    <td key={col.key} className={`py-3.5 text-right px-2 border-r border-slate-200 ${textClass}`}>
+                    <td key={col.key} className={`py-3.5 text-right px-3 border-r border-slate-200 ${textClass}`}>
                       {content}
                     </td>
                   );
                 })}
-                <td className="py-3.5 text-center px-2"></td>
+                <td className="py-3.5 text-center px-3"></td>
               </tr>
             </tbody>
           </table>
@@ -1132,7 +1270,7 @@ export default function BillingPaymentsPage({
                     </div>
                     <div className="bill-modal-row bill-modal-row-total border-blue-200">
                       <span>Current Month Total</span>
-                      <span className="text-blue-800 font-extrabold">₹{payments.totalPayable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-blue-800 font-extrabold">₹{(payments.waterCost + payments.maintenance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 
@@ -1143,15 +1281,15 @@ export default function BillingPaymentsPage({
                     </div>
                     <div className="bill-modal-row">
                       <span>Resident Arrear</span>
-                      <span className="font-semibold">₹0.00</span>
+                      <span className="font-semibold">₹{payments.residentArrear.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="bill-modal-row">
                       <span>Owner Arrear</span>
-                      <span className="font-semibold">₹0.00</span>
+                      <span className="font-semibold">₹{payments.ownerArrear.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="bill-modal-row bill-modal-row-total border-orange-200">
                       <span>Total Arrear</span>
-                      <span className="text-orange-700 font-extrabold">₹0.00</span>
+                      <span className="text-orange-700 font-extrabold">₹{(payments.residentArrear + payments.ownerArrear).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 

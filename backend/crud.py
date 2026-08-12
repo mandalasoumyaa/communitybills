@@ -342,7 +342,8 @@ def get_water_readings(
     skip: int = 0,
     limit: int = 100,
     sort_col: str = "apartment_number",
-    sort_dir: str = "asc"
+    sort_dir: str = "asc",
+    community_id: Optional[int] = None
 ):
     # Ensure all required flats exist in water_readings for the given month
     required_flat_numbers = [
@@ -353,22 +354,33 @@ def get_water_readings(
         "501", "502", "503", "504", "505"
     ]
     
-    # Ensure flats exist in the database under Tower 1
+    # Resolve tower_id dynamically for the selected community
+    tower = None
+    if community_id is not None:
+        tower = db.query(models.Tower).filter(models.Tower.community_id == community_id).first()
+    if not tower:
+        tower = db.query(models.Tower).first()
+        
+    tower_id = tower.id if tower else 1
+    
+    # Ensure flats exist in the database under this tower
     for flat_num in required_flat_numbers:
-        flat_exists = db.query(models.Flat).filter(models.Flat.number == flat_num).first()
+        flat_exists = db.query(models.Flat).filter(
+            and_(models.Flat.number == flat_num, models.Flat.tower_id == tower_id)
+        ).first()
         if not flat_exists:
             new_flat = models.Flat(
                 number=flat_num,
                 status="Occupied",
                 resident_name=f"Resident {flat_num}",
-                tower_id=1
+                tower_id=tower_id
             )
             db.add(new_flat)
     db.commit()
     
     flats_to_generate = db.query(models.Flat).filter(
         models.Flat.number.in_(required_flat_numbers),
-        models.Flat.tower_id == 1
+        models.Flat.tower_id == tower_id
     ).all()
     
     if not flats_to_generate:
@@ -439,7 +451,7 @@ def get_water_readings(
     query = db.query(models.WaterReading).join(models.Flat, models.WaterReading.apartment_id == models.Flat.id).filter(
         models.WaterReading.month == month,
         models.Flat.number.in_(required_flat_numbers),
-        models.Flat.tower_id == 1
+        models.Flat.tower_id == tower_id
     )
 
     # Search filter

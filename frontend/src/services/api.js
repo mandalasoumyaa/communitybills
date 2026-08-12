@@ -15,13 +15,19 @@ export const expenseService = {
     return response.data;
   },
   
-  getExpenses: async () => {
-    const response = await api.get('/expenses');
+  getExpenses: async (communityId) => {
+    const params = communityId ? { community_id: communityId } : {};
+    const response = await api.get('/expenses', { params });
     return response.data;
   },
   
   createExpense: async (expenseData) => {
     const response = await api.post('/expenses', expenseData);
+    return response.data;
+  },
+  
+  deleteExpense: async (id) => {
+    const response = await api.delete(`/expenses/${id}`);
     return response.data;
   },
   

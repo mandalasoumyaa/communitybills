@@ -31,6 +31,7 @@ import {
   Menu
 } from 'lucide-react';
 import * as api from './services/communityApi';
+import { expenseService } from './services/api';
 import CommunityPage from './pages/CommunityPage';
 import TowersPage from './pages/TowersPage';
 import FlatsPage from './pages/FlatsPage';
@@ -49,7 +50,10 @@ import initialWaterReadings from './water_readings.json';
 function App() {
   const [activeTab, setActiveTab] = useState('communities');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [currentCommunityId, setCurrentCommunityId] = useState(1);
+  const [currentCommunityId, setCurrentCommunityId] = useState(() => {
+    const saved = localStorage.getItem('currentCommunityId');
+    return saved ? parseInt(saved, 10) : 1;
+  });
   const [communityOverview, setCommunityOverview] = useState(null);
   const [communitiesList, setCommunitiesList] = useState([]);
   const [showAddCommunityModal, setShowAddCommunityModal] = useState(false);
@@ -206,6 +210,9 @@ function App() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (currentCommunityId) {
+      localStorage.setItem('currentCommunityId', currentCommunityId);
+    }
     loadData();
   }, [currentCommunityId]);
 
@@ -284,6 +291,22 @@ function App() {
         });
         return initialPayments;
       });
+
+      // Fetch expenses from SQLite database via API
+      try {
+        const backendExpenses = await expenseService.getExpenses(communityId);
+        const formatted = backendExpenses.map(exp => ({
+          id: exp.id,
+          title: exp.vendor || exp.description || 'Expense',
+          amount: exp.amount,
+          category: exp.category.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          date: exp.date,
+          notes: exp.description || exp.notes || '-'
+        }));
+        setExpenses(formatted);
+      } catch (expErr) {
+        console.error("Error loading expenses", expErr);
+      }
 
     } catch (err) {
       console.error("Error loading data", err);
@@ -741,6 +764,8 @@ function App() {
               paymentsList={paymentsList}
               setPaymentsList={setPaymentsList}
               addLog={(txt) => addLog(txt, 'add')}
+              currentCommunityId={currentCommunityId}
+              communityOverview={communityOverview}
             />
           )}
 

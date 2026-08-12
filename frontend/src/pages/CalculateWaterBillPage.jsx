@@ -68,7 +68,9 @@ export default function CalculateWaterBillPage({
   setWaterBills, 
   addLog,
   sharedMonth,
-  setSharedMonth
+  setSharedMonth,
+  currentCommunityId,
+  communityName
 }) {
   // Data States
   const [readings, setReadings] = useState([])
@@ -569,7 +571,8 @@ export default function CalculateWaterBillPage({
         skip: 0,
         limit: 100,
         sort_col: sortCol,
-        sort_dir: sortDir
+        sort_dir: sortDir,
+        community_id: currentCommunityId
       })
       
       const apartmentNumbers = [
@@ -622,7 +625,7 @@ export default function CalculateWaterBillPage({
     } finally {
       setLoading(false)
     }
-  }, [selectedMonth, searchTerm, floorFilter, statusFilter, sortCol, sortDir, showToast])
+  }, [selectedMonth, searchTerm, floorFilter, statusFilter, sortCol, sortDir, showToast, currentCommunityId])
 
   // Initial and reactive load trigger
   useEffect(() => {
@@ -1384,11 +1387,16 @@ export default function CalculateWaterBillPage({
       <header className="header-wrapper">
         <div className="header-container">
           <div className="header-left">
-            <div className="header-title-row">
+            <div className="header-title-row" style={{ display: 'flex', alignItems: 'center' }}>
               <span className="header-logo">
                 <Droplet size={28} fill="var(--primary)" strokeWidth={1.5} />
               </span>
               <h1>Water Management</h1>
+              {communityName && (
+                <span style={{ marginLeft: '12px', padding: '4px 10px', backgroundColor: '#eef2ff', color: '#6366f1', borderRadius: '6px', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {communityName}
+                </span>
+              )}
             </div>
             <p className="header-subtitle">
               Track apartment water meter readings and generate monthly bills.

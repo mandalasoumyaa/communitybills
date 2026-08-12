@@ -112,3 +112,24 @@ class WaterRate(Base):
 
 
 Apartment = Flat
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+
+    id = Column(String, primary_key=True, index=True)
+    community_id = Column(Integer, ForeignKey("communities.id"), nullable=True)
+    category = Column(String, nullable=False)
+    date = Column(Date, nullable=False)
+    amount = Column(Float, nullable=False)
+    paymentMode = Column(String, nullable=False)
+    vendor = Column(String, nullable=False)
+    referenceNumber = Column(String, nullable=True)
+    paidFromAccount = Column(String, nullable=False)
+    apartment = Column(String, nullable=True)
+    description = Column(String, nullable=False)
+    notes = Column(String, nullable=True)
+    recurring = Column(Boolean, default=False)
+    receiptUrl = Column(String, nullable=True)
+    status = Column(String, default="Paid")
+
