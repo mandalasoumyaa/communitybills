@@ -99,7 +99,19 @@ def upload_csv_readings(
         if ';' in contents and contents.count(';') > contents.count(','):
             delimiter = ';'
             
-        csv_reader = csv.DictReader(io.StringIO(contents), delimiter=delimiter)
+        # Find first line that has headers
+        lines = contents.splitlines()
+        header_idx = 0
+        for i, line in enumerate(lines[:10]):
+            cols = [c.strip().lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "") for c in line.split(delimiter)]
+            has_apt = any(any(x in col for x in ["apartment", "apt", "flat", "unit", "room", "house", "door"]) for col in cols)
+            has_read = any(any(x in col for x in ["reading", "current", "curr", "closing", "end", "val"]) for col in cols)
+            if has_apt and has_read:
+                header_idx = i
+                break
+        
+        contents_clean = "\n".join(lines[header_idx:])
+        csv_reader = csv.DictReader(io.StringIO(contents_clean), delimiter=delimiter)
         
         processed_count = 0
         error_rows = []
@@ -116,10 +128,10 @@ def upload_csv_readings(
             for k, v in normalized_row.items():
                 if not k:
                     continue
-                k_clean = k.strip().lower().replace(" ", "_")
+                k_clean = k.strip().lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "")
                 
                 # Check for apartment keys
-                if any(x in k_clean for x in ["apartment", "apt", "flat", "unit", "room", "house"]):
+                if any(x in k_clean for x in ["apartment", "apt", "flat", "unit", "room", "house", "door"]):
                     apt_num = v
                 # Check for previous keys
                 elif any(x in k_clean for x in ["previous", "prev", "opening", "start"]):
@@ -216,46 +228,74 @@ def upload_excel_readings(
                 detail="Excel file is empty."
             )
         
-        headers = [str(cell).strip().lower().replace(" ", "_") if cell is not None else "" for cell in rows[0]]
-        
+        headers = []
         apt_idx = -1
         curr_idx = -1
-        for idx, h in enumerate(headers):
-            h_clean = h.strip().lower().replace(" ", "_")
-            if any(x in h_clean for x in ["apartment", "apt", "flat", "unit", "room", "house"]):
-                apt_idx = idx
-            elif any(x in h_clean for x in ["current", "curr", "closing", "end"]) or ("reading" in h_clean and "prev" not in h_clean and "previous" not in h_clean):
-                curr_idx = idx
+        header_row_idx = 0
+        
+        for r_idx, row in enumerate(rows[:10]):  # check first 10 rows
+            if not row or all(c is None for c in row):
+                continue
+            row_headers = [str(cell).strip().lower() if cell is not None else "" for cell in row]
+            for idx, h in enumerate(row_headers):
+                h_clean = h.replace(" ", "").replace("_", "").replace("-", "").replace(".", "")
+                if any(x in h_clean for x in ["apartment", "apt", "flat", "unit", "room", "house", "door"]):
+                    apt_idx = idx
+                elif any(x in h_clean for x in ["current", "curr", "closing", "end"]) or ("reading" in h_clean and "prev" not in h_clean and "previous" not in h_clean):
+                    curr_idx = idx
+            if apt_idx != -1 and curr_idx != -1:
+                header_row_idx = r_idx
+                headers = row_headers
+                break
         
         if apt_idx == -1 or curr_idx == -1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required columns. Excel must contain only: Flat No and Current Reading."
+                detail="Missing required columns. Excel must contain: Flat No (Apartment) and Current Reading."
             )
         
         db.begin()
         imported_count = 0
         failed_count = 0
         errors = []
-
-        for idx, row in enumerate(rows[1:]):
+ 
+        for idx, row in enumerate(rows[header_row_idx + 1:]):
             if all(cell is None for cell in row):
+                continue
+
+            # Skip row if any cell contains tanker/summary keywords
+            skip_keywords = ["total", "totals", "tankers", "manjeera", "external", "capacity", 
+                             "total lts", "cost per tanker", "summary", "grand total", "water cost", 
+                             "actual", "considered", "litre", "liter"]
+            row_values_str = [str(cell).strip().lower() if cell is not None else "" for cell in row]
+            if any(any(kw in val for kw in skip_keywords) for val in row_values_str):
                 continue
 
             apt_val = row[apt_idx]
             curr_val = row[curr_idx]
-            row_num = idx + 2
+            row_num = idx + header_row_idx + 2
 
-            if apt_val is None or curr_val is None or str(apt_val).strip() == "" or str(curr_val).strip() == "":
-                failed_count += 1
-                errors.append({"row": row_num, "flat_no": apt_val or "", "message": "Flat No and Current Reading are required."})
+            if apt_val is None or str(apt_val).strip() == "":
+                # Silently skip rows with empty apartment column (part of tanker/summary sections)
                 continue
 
             apt_num = normalize_apartment_number(str(apt_val))
+            
+            # Skip row silently if the value does not look like an apartment number (3 or 4 digits)
+            import re
+            apt_val_clean = apt_num.replace("A-", "").upper().strip()
+            if not re.match(r'^\d{3,4}$', apt_val_clean):
+                continue
+
+            if curr_val is None or str(curr_val).strip() == "":
+                failed_count += 1
+                errors.append({"row": row_num, "flat_no": apt_num, "message": "Current Reading is required."})
+                continue
+
             apt = crud.get_apartment_by_number(db, apartment_number=apt_num)
             if not apt:
                 failed_count += 1
-                errors.append({"row": row_num, "flat_no": apt_num, "message": "Flat number not found."})
+                errors.append({"row": row_num, "flat_no": apt_num, "message": f"Flat number {apt_num} not found."})
                 continue
 
             try:
@@ -391,20 +431,34 @@ def preview_csv_readings(
         except UnicodeDecodeError:
             decoded_str = raw_bytes.decode("latin-1")
             
+        # Detect delimiter
+        delimiter = ','
+        if ';' in decoded_str and decoded_str.count(';') > decoded_str.count(','):
+            delimiter = ';'
+            
+        # Find first line that has headers
+        lines = decoded_str.splitlines()
+        header_idx = 0
+        for i, line in enumerate(lines[:10]):
+            cols = [c.strip().lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "") for c in line.split(delimiter)]
+            has_apt = any(any(x in col for x in ["apartment", "apt", "flat", "unit", "room", "house", "door"]) for col in cols)
+            has_read = any(any(x in col for x in ["reading", "current", "curr", "closing", "end", "val"]) for col in cols)
+            if has_apt and has_read:
+                header_idx = i
+                break
+                
         # sep=None and engine='python' lets pandas auto-detect separators (comma, semicolon, tab)
-        df = pd.read_csv(io.StringIO(decoded_str), sep=None, engine='python')
+        df = pd.read_csv(io.StringIO(decoded_str), skiprows=header_idx, sep=None, engine='python')
         
         # Trim whitespace from headers
         df.columns = [str(c).strip() for c in df.columns]
         
         # Find apartment column
         apt_col = None
-        apt_candidates = ["apartment", "apartment no", "apartment number", "flat", "flat no", "unit", "unit no", "door no"]
+        apt_candidates = ["apartment", "apt", "flat", "unit", "room", "house", "door"]
         for col in df.columns:
-            c_clean = col.lower().replace(" ", "").replace("_", "").replace("-", "")
-            # Check if clean header matches any of candidates (without spaces/specials)
-            cand_clean = [cand.replace(" ", "") for cand in apt_candidates]
-            if c_clean in cand_clean:
+            c_clean = str(col).lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "")
+            if any(cand in c_clean or c_clean in cand for cand in apt_candidates):
                 apt_col = col
                 break
                 
@@ -418,8 +472,8 @@ def preview_csv_readings(
         reading_cols = []
         exclude_keywords = ["consumption", "cost", "bill", "amount", "total", "rate", "litre", "unit"]
         for col in df.columns:
-            col_lower = col.lower()
-            if "reading" in col_lower:
+            col_lower = str(col).lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "")
+            if "reading" in col_lower or "curr" in col_lower or "val" in col_lower:
                 # Check if it has any exclusion keywords
                 if not any(ex in col_lower for ex in exclude_keywords):
                     reading_cols.append(col)
@@ -437,13 +491,18 @@ def preview_csv_readings(
             prev_col = None
             curr_col = reading_cols[0]
             
-        # Skip completely empty rows
-        df.dropna(subset=[apt_col], inplace=True)
-        
         preview_data = []
         error_rows = []
         
         for idx, row in df.iterrows():
+            # Skip row if any cell contains tanker/summary keywords
+            skip_keywords = ["total", "totals", "tankers", "manjeera", "external", "capacity", 
+                             "total lts", "cost per tanker", "summary", "grand total", "water cost", 
+                             "actual", "considered", "litre", "liter"]
+            row_values_str = [str(val).strip().lower() for val in row.values if not pd.isna(val)]
+            if any(any(kw in val for kw in skip_keywords) for val in row_values_str):
+                continue
+
             apt_val = row[apt_col]
             prev_val = row[prev_col] if prev_col else None
             curr_val = row[curr_col]
@@ -455,11 +514,17 @@ def preview_csv_readings(
             # Validation
             apt_str = str(apt_val).strip() if not pd.isna(apt_val) else ""
             if not apt_str:
-                error_rows.append(f"Row {idx+2}: Apartment Number is empty")
                 continue
                 
+            apt_num_str = normalize_apartment_number(apt_str)
+            
+            # Skip row silently if the value does not look like an apartment number (3 or 4 digits)
+            import re
+            apt_val_clean = apt_num_str.replace("A-", "").upper().strip()
+            if not re.match(r'^\d{3,4}$', apt_val_clean):
+                continue
+
             try:
-                apt_num_str = normalize_apartment_number(apt_str)
                 apt = crud.get_apartment_by_number(db, apartment_number=apt_num_str)
                 if not apt:
                     error_rows.append(f"Row {idx+2} ({apt_str}): Flat number does not exist in database")

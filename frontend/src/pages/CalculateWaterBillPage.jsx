@@ -267,48 +267,98 @@ export default function CalculateWaterBillPage({
       "501", "502", "503", "504", "505"
     ])
 
-    const firstRowKeys = Object.keys(rows[0])
+    let firstRowKeys = Object.keys(rows[0])
     console.log("CSV HEADERS:", firstRowKeys)
     console.log("FIRST ROW:", rows[0])
 
-    const headerMapping = {}
-    firstRowKeys.forEach(k => {
-      const normalized = k.trim().toLowerCase().replace(/\s+/g, '_').replace(/[\(\)]/g, '')
-      headerMapping[normalized] = k
-    })
+    const tryMapHeaders = (keysList) => {
+      let mapping = {}
+      let foundApt = null
+      let foundCurr = null
+      let foundPrev = null
+      let foundConsUnits = null
+      let foundConsLitres = null
+      let foundCost = null
 
-    let aptKey = null
-    let prevKey = null
-    let currKey = null
-    let consUnitsKey = null
-    let consLitresKey = null
-    let costKey = null
+      keysList.forEach(k => {
+        if (k === null || k === undefined) return
+        const normalized = String(k).trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+        mapping[normalized] = k
+      })
 
-    Object.keys(headerMapping).forEach(normKey => {
-      const origKey = headerMapping[normKey]
-      // Use exact matches or custom checks to avoid matching "units" in "consumption_units"
-      if (['apartment', 'flat_no', 'flat', 'unit', 'door_no', 'apartment_number', 'apt'].includes(normKey)) {
-        aptKey = origKey
-      } else if (normKey.includes('previous') || normKey.includes('prev') || normKey.includes('reading_30-4-2026') || normKey.includes('reading_31-12-2025') || normKey.includes('opening') || normKey === 'prev_reading') {
-        prevKey = origKey
-      } else if (normKey.includes('current') || normKey.includes('curr') || normKey.includes('reading_may_31_2026') || normKey.includes('reading_jan_31_2026') || normKey.includes('closing') || (normKey.includes('reading') && !normKey.includes('prev'))) {
-        currKey = origKey
-      } else if (normKey.includes('consumption_units') || (normKey.includes('consumption') && normKey.includes('units')) || (normKey.includes('units') && !normKey.includes('cost'))) {
-        consUnitsKey = origKey
-      } else if (normKey.includes('consumption_lts') || normKey.includes('consumption_litres') || normKey.includes('litres') || normKey.includes('lts')) {
-        consLitresKey = origKey
-      } else if (normKey.includes('cost') || normKey.includes('amount') || normKey.includes('price')) {
-        costKey = origKey
+      Object.keys(mapping).forEach(normKey => {
+        const origKey = mapping[normKey]
+        const isAptCandidate = ['apartment', 'flat', 'unit', 'door', 'apt', 'room', 'house'].some(cand => normKey.includes(cand)) &&
+                               !normKey.includes('consumption') &&
+                               !normKey.includes('reading') &&
+                               !normKey.includes('cost') &&
+                               !normKey.includes('bill') &&
+                               !normKey.includes('charge')
+        if (isAptCandidate) {
+          foundApt = origKey
+        } else if (normKey.includes('previous') || normKey.includes('prev') || normKey.includes('reading3042026') || normKey.includes('reading31122025') || normKey.includes('opening') || normKey.includes('start')) {
+          foundPrev = origKey
+        } else if (normKey.includes('current') || normKey.includes('curr') || normKey.includes('readingmay312026') || normKey.includes('readingjan312026') || normKey.includes('closing') || (normKey.includes('reading') && !normKey.includes('prev') && !normKey.includes('previous'))) {
+          foundCurr = origKey
+        } else if (normKey.includes('consumptionunits') || (normKey.includes('consumption') && normKey.includes('units')) || (normKey.includes('units') && !normKey.includes('cost'))) {
+          foundConsUnits = origKey
+        } else if (normKey.includes('consumptionlts') || normKey.includes('consumptionlitres') || normKey.includes('litres') || normKey.includes('lts')) {
+          foundConsLitres = origKey
+        } else if (normKey.includes('cost') || normKey.includes('amount') || normKey.includes('price')) {
+          foundCost = origKey
+        }
+      })
+      return { foundApt, foundCurr, foundPrev, foundConsUnits, foundConsLitres, foundCost }
+    }
+
+    let headersResult = tryMapHeaders(firstRowKeys)
+    let dataStartIdx = 0
+
+    // If we didn't find both apartment and current reading in the keys,
+    // let's scan the values of the first 10 rows to see if the headers are there.
+    if (!headersResult.foundApt || !headersResult.foundCurr) {
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const rowValList = Object.values(rows[i]).map(v => v !== null && v !== undefined ? String(v) : "")
+        const tempResult = tryMapHeaders(rowValList)
+        if (tempResult.foundApt && tempResult.foundCurr) {
+          const keysOfThisRow = Object.keys(rows[i])
+          
+          let aptKey = keysOfThisRow[rowValList.indexOf(tempResult.foundApt)]
+          let currKey = keysOfThisRow[rowValList.indexOf(tempResult.foundCurr)]
+          let prevKey = tempResult.foundPrev ? keysOfThisRow[rowValList.indexOf(tempResult.foundPrev)] : null
+          let consUnitsKey = tempResult.foundConsUnits ? keysOfThisRow[rowValList.indexOf(tempResult.foundConsUnits)] : null
+          let consLitresKey = tempResult.foundConsLitres ? keysOfThisRow[rowValList.indexOf(tempResult.foundConsLitres)] : null
+          let costKey = tempResult.foundCost ? keysOfThisRow[rowValList.indexOf(tempResult.foundCost)] : null
+          
+          headersResult = {
+            foundApt: aptKey,
+            foundCurr: currKey,
+            foundPrev: prevKey,
+            foundConsUnits: consUnitsKey,
+            foundConsLitres: consLitresKey,
+            foundCost: costKey
+          }
+          dataStartIdx = i + 1
+          firstRowKeys = rowValList
+          break
+        }
       }
-    })
+    }
+
+    const aptKey = headersResult.foundApt
+    const currKey = headersResult.foundCurr
+    const prevKey = headersResult.foundPrev
+    const consUnitsKey = headersResult.foundConsUnits
+    const consLitresKey = headersResult.foundConsLitres
+    const costKey = headersResult.foundCost
 
     if (!aptKey) {
-      showToast('Could not find Apartment/Flat No column in file.', 'error')
+      showToast(`Could not find Apartment/Flat No column in file. Detected columns: ${firstRowKeys.filter(k => k).join(', ')}`, 'error')
       setIsExcelUploading(false)
       return
     }
     if (!currKey) {
-      showToast('Could not find Current Reading column in file.', 'error')
+      showToast(`Could not find Current Reading column in file. Detected columns: ${firstRowKeys.filter(k => k).join(', ')}`, 'error')
       setIsExcelUploading(false)
       return
     }
@@ -318,21 +368,43 @@ export default function CalculateWaterBillPage({
     const processedApts = new Set()
     const rate = parseFloat(costPerLitre) || 0.575
 
-    rows.forEach((row, index) => {
+    rows.slice(dataStartIdx).forEach((row, index) => {
       if (Object.values(row).every(v => v === null || v === undefined || String(v).trim() === '')) {
         return
       }
 
-      const rowNum = index + 2
+      const rowNum = index + dataStartIdx + 2
       const rawAptVal = row[aptKey]
-      if (rawAptVal === null || rawAptVal === undefined || String(rawAptVal).trim() === '') {
-        errors.push(`Row ${rowNum}: Apartment number is missing.`)
+
+      // Skip row if any cell contains tanker/summary keywords
+      const skipKeywords = [
+        "TOTAL", "TOTALS", "TANKERS", "MANJEERA", "EXTERNAL", "CAPACITY", 
+        "TOTAL LTS", "COST PER TANKER", "SUMMARY", "GRAND TOTAL", "WATER COST", 
+        "ACTUAL", "CONSIDERED", "LITRE", "LITER"
+      ]
+      const rowValuesStr = Object.values(row).map(v => String(v || "").trim().toUpperCase())
+      const shouldSkipRow = rowValuesStr.some(val => 
+        skipKeywords.some(keyword => val.includes(keyword))
+      )
+      if (shouldSkipRow) {
         return
       }
 
-      let aptVal = String(rawAptVal).trim().toUpperCase()
+      if (rawAptVal === null || rawAptVal === undefined || String(rawAptVal).trim() === '') {
+        // Silently skip rows with empty apartment column (part of tanker/summary sections)
+        return
+      }
+
+      const normalizedFlat = String(rawAptVal).trim().replace(/\.0$/, "")
+      let aptVal = normalizedFlat.toUpperCase()
       if (aptVal.startsWith('A-')) {
         aptVal = aptVal.substring(2)
+      }
+
+      // Skip row silently if the value does not look like an apartment number (3 or 4 digits)
+      const isAptFormat = /^\d{3,4}$/.test(aptVal)
+      if (!isAptFormat) {
+        return
       }
 
       if (!validApts.has(aptVal)) {

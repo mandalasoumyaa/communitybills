@@ -26,65 +26,6 @@ import {
 } from 'lucide-react';
 import * as api from '../services/communityApi';
 
-const getBillPayments = (item, selectedMonth) => {
-  const isCompleted = item.status === 'Paid';
-  const waterCost = item.waterCost || 0;
-  const maintenance = item.maintenance || 3000;
-  const totalPayable = waterCost + maintenance;
-
-  if (isCompleted) {
-    const resPaid = waterCost;
-    const ownPaid = maintenance;
-    const history = [
-      { date: '08 Jan 2026', paidBy: 'Resident', mode: 'UPI', amount: resPaid, txId: 'UPI456789', remarks: '--' },
-      { date: '09 Jan 2026', paidBy: 'Owner', mode: 'Bank Transfer', amount: ownPaid, txId: 'TXN984562', remarks: '--' }
-    ];
-    return {
-      waterCost,
-      maintenance,
-      residentArrear: 0,
-      ownerArrear: 0,
-      totalPayable,
-      resPayment: { amount: resPaid, mode: 'UPI', txId: 'UPI456789', date: '08 Jan 2026', remarks: '--' },
-      ownPayment: { amount: ownPaid, mode: 'Bank Transfer', txId: 'TXN984562', date: '09 Jan 2026', remarks: '--' },
-      history,
-      totalPaid: totalPayable,
-      outstanding: 0,
-      nextResArrear: 0,
-      nextOwnArrear: 0
-    };
-  } else {
-    // Pending or Missing or Unpaid or Partial
-    const resPaidVal = 3000;
-    const ownPaidVal = 5000;
-    const cashPaidVal = item.number === '101' ? 579 : Math.max(0, waterCost - resPaidVal);
-
-    const history = [
-      { date: '08 Jan 2026', paidBy: 'Resident', mode: 'UPI', amount: resPaidVal, txId: 'UPI456789', remarks: '--' },
-      { date: '09 Jan 2026', paidBy: 'Owner', mode: 'Bank Transfer', amount: ownPaidVal, txId: 'TXN984562', remarks: '--' },
-      { date: '12 Jan 2026', paidBy: 'Resident', mode: 'Cash', amount: cashPaidVal, txId: 'CASH001', remarks: '--' }
-    ];
-
-    const totalPaid = resPaidVal + ownPaidVal;
-    const outstanding = totalPayable - totalPaid;
-
-    return {
-      waterCost,
-      maintenance,
-      residentArrear: 0,
-      ownerArrear: 0,
-      totalPayable,
-      resPayment: { amount: resPaidVal, mode: 'UPI', txId: 'UPI456789', date: '08 Jan 2026', remarks: '--' },
-      ownPayment: { amount: ownPaidVal, mode: 'Bank Transfer', txId: 'TXN984562', date: '09 Jan 2026', remarks: '--' },
-      history,
-      totalPaid,
-      outstanding,
-      nextResArrear: outstanding,
-      nextOwnArrear: 0
-    };
-  }
-};
-
 export default function BillingPaymentsPage({
   towersList = [],
   flatsList = [],
@@ -107,6 +48,186 @@ export default function BillingPaymentsPage({
 
   const [selectedBillItem, setSelectedBillItem] = useState(null);
   const [showBillModal, setShowBillModal] = useState(false);
+
+  const [customPayments, setCustomPayments] = useState({});
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [recordModalData, setRecordModalData] = useState({
+    flatId: null,
+    flatNumber: '',
+    paidBy: 'Resident',
+    amount: 0,
+    colKey: '',
+    mode: 'Cash',
+    date: '',
+    txId: '',
+    remarks: ''
+  });
+
+  const getFlatInitialPayments = (flat) => {
+    const isCompleted = flat.status === 'Paid';
+    const waterCost = flat.waterCost || 0;
+    const maintenance = flat.maintenance || 3000;
+    
+    if (isCompleted) {
+      return {
+        resident: waterCost,
+        owner: maintenance,
+        history: [
+          { date: '08 Jan 2026', paidBy: 'Resident', mode: 'UPI', amount: waterCost, txId: 'UPI456789', remarks: '--' },
+          { date: '09 Jan 2026', paidBy: 'Owner', mode: 'Bank Transfer', amount: maintenance, txId: 'TXN984562', remarks: '--' }
+        ]
+      };
+    } else {
+      const resPaidVal = 3000;
+      const ownPaidVal = 5000;
+      const flatNumClean = String(flat.number || '').replace(/[-\s]/g, '');
+      const cashPaidVal = (flatNumClean === '101' || flatNumClean === 'A101') ? 579 : Math.max(0, waterCost - resPaidVal);
+      return {
+        resident: resPaidVal + cashPaidVal,
+        owner: ownPaidVal,
+        history: [
+          { date: '08 Jan 2026', paidBy: 'Resident', mode: 'UPI', amount: resPaidVal, txId: 'UPI456789', remarks: '--' },
+          { date: '09 Jan 2026', paidBy: 'Owner', mode: 'Bank Transfer', amount: ownPaidVal, txId: 'TXN984562', remarks: '--' },
+          { date: '12 Jan 2026', paidBy: 'Resident', mode: 'Cash', amount: cashPaidVal, txId: 'CASH001', remarks: '--' }
+        ]
+      };
+    }
+  };
+
+  const getFlatPaymentHistory = (flat) => {
+    const initial = getFlatInitialPayments(flat);
+    const custom = customPayments[flat.id] || [];
+    return [...initial.history, ...custom];
+  };
+
+  const getBillPayments = (item, selectedMonth) => {
+    const waterCost = item.waterCost || 0;
+    const maintenance = item.maintenance || 3000;
+    const totalPayable = waterCost + maintenance;
+
+    const history = getFlatPaymentHistory(item);
+    const resPayments = history.filter(h => h.paidBy === 'Resident');
+    const ownPayments = history.filter(h => h.paidBy === 'Owner');
+
+    const resPaid = resPayments.reduce((sum, h) => sum + h.amount, 0);
+    const ownPaid = ownPayments.reduce((sum, h) => sum + h.amount, 0);
+
+    const totalPaid = resPaid + ownPaid;
+    const outstanding = Math.max(0, totalPayable - totalPaid);
+
+    const lastRes = resPayments[resPayments.length - 1] || { amount: 0, mode: '--', txId: '--', date: '--', remarks: '--' };
+    const lastOwn = ownPayments[ownPayments.length - 1] || { amount: 0, mode: '--', txId: '--', date: '--', remarks: '--' };
+
+    return {
+      waterCost,
+      maintenance,
+      residentArrear: 0,
+      ownerArrear: 0,
+      totalPayable,
+      resPayment: { amount: resPaid, mode: lastRes.mode, txId: lastRes.txId, date: lastRes.date, remarks: lastRes.remarks },
+      ownPayment: { amount: ownPaid, mode: lastOwn.mode, txId: lastOwn.txId, date: lastOwn.date, remarks: lastOwn.remarks },
+      history,
+      totalPaid,
+      outstanding,
+      nextResArrear: outstanding,
+      nextOwnArrear: 0
+    };
+  };
+
+  const formatDateToShort = (dateStr) => {
+    if (!dateStr) return '';
+    const dateObj = new Date(dateStr);
+    if (isNaN(dateObj.getTime())) return dateStr;
+    return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const handleTriggerRecordPayment = (flatId, colKey, val) => {
+    const amount = parseFloat(val);
+    if (!isNaN(amount) && amount > 0) {
+      const item = flatPayments.find(f => f.id === flatId);
+      const todayYMD = new Date().toISOString().split('T')[0];
+      setRecordModalData({
+        flatId,
+        flatNumber: item ? item.number : '',
+        paidBy: colKey === 'paidByResident' ? 'Resident' : 'Owner',
+        amount: amount,
+        colKey: colKey,
+        mode: 'Cash',
+        date: todayYMD,
+        txId: '',
+        remarks: ''
+      });
+      setShowRecordModal(true);
+    }
+  };
+
+  const handleCancelRecordPayment = () => {
+    const { flatId, colKey } = recordModalData;
+    setEditedPayments(prev => {
+      const next = { ...prev };
+      if (next[flatId]) {
+        delete next[flatId][colKey];
+        if (Object.keys(next[flatId]).length === 0) {
+          delete next[flatId];
+        }
+      }
+      return next;
+    });
+    setShowRecordModal(false);
+  };
+
+  const handleSaveRecordPayment = () => {
+    const { flatId, paidBy, amount, mode, date, txId, remarks } = recordModalData;
+    
+    setCustomPayments(prev => {
+      const flatHistory = prev[flatId] || [];
+      const newPayment = {
+        date: formatDateToShort(date),
+        paidBy,
+        mode,
+        amount: parseFloat(amount) || 0,
+        txId: txId || (mode === 'Cash' ? 'CASH' + Math.floor(1000 + Math.random() * 9000) : ''),
+        remarks: remarks || '--'
+      };
+      return {
+        ...prev,
+        [flatId]: [...flatHistory, newPayment]
+      };
+    });
+
+    setSavedPayments(prev => {
+      const currentSaved = prev[flatId] || {};
+      const colKey = paidBy === 'Resident' ? 'paidByResident' : 'paidByOwner';
+      const existingVal = currentSaved[colKey] || 0;
+      const newPaidVal = existingVal + amount;
+      
+      return {
+        ...prev,
+        [flatId]: {
+          ...currentSaved,
+          [colKey]: newPaidVal
+        }
+      };
+    });
+
+    const { colKey } = recordModalData;
+    setEditedPayments(prev => {
+      const next = { ...prev };
+      if (next[flatId]) {
+        delete next[flatId][colKey];
+        if (Object.keys(next[flatId]).length === 0) {
+          delete next[flatId];
+        }
+      }
+      return next;
+    });
+
+    if (addLog) {
+      addLog(`Recorded ${paidBy} payment of ₹${amount} for Flat ${recordModalData.flatNumber}`);
+    }
+
+    setShowRecordModal(false);
+  };
 
   const handleOpenViewBill = (item) => {
     setSelectedBillItem(item);
@@ -298,13 +419,14 @@ export default function BillingPaymentsPage({
       const maintenance = 3000;
       const currentMonthTotal = waterCost + maintenance;
 
+      // For the table view, only show custom recorded payments so that they start blank (0)
+      const customOnly = customPayments[flat.id] || [];
+      let paidByResident = customOnly.filter(h => h.paidBy === 'Resident').reduce((sum, h) => sum + h.amount, 0);
+      let paidByOwner = customOnly.filter(h => h.paidBy === 'Owner').reduce((sum, h) => sum + h.amount, 0);
+
       // Seed outstanding arrears/payments matching screenshot structure
       let residentArrear = 0;
       let ownerArrear = 0;
-      let paidByResident = 0;
-      let paidByOwner = 0;
-
-
 
       // Merge edits/saves
       const flatEdits = editedPayments[flat.id] || {};
@@ -312,14 +434,10 @@ export default function BillingPaymentsPage({
 
       if ('paidByResident' in flatEdits) {
         paidByResident = flatEdits.paidByResident === '' ? 0 : parseFloat(flatEdits.paidByResident) || 0;
-      } else if ('paidByResident' in flatSaved) {
-        paidByResident = flatSaved.paidByResident;
       }
 
       if ('paidByOwner' in flatEdits) {
         paidByOwner = flatEdits.paidByOwner === '' ? 0 : parseFloat(flatEdits.paidByOwner) || 0;
-      } else if ('paidByOwner' in flatSaved) {
-        paidByOwner = flatSaved.paidByOwner;
       }
 
       if ('residentArrear' in flatEdits) {
@@ -759,6 +877,18 @@ export default function BillingPaymentsPage({
                               placeholder="Enter Amount"
                               value={editValue}
                               onChange={(e) => handleEditPayment(item.id, col.key, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  if (col.key === 'paidByResident' || col.key === 'paidByOwner') {
+                                    handleTriggerRecordPayment(item.id, col.key, e.target.value);
+                                  }
+                                }
+                              }}
+                              onBlur={(e) => {
+                                if (col.key === 'paidByResident' || col.key === 'paidByOwner') {
+                                  handleTriggerRecordPayment(item.id, col.key, e.target.value);
+                                }
+                              }}
                               className="pl-6 pr-2.5 py-1.5 w-full border border-slate-200 rounded-xl text-right text-xs focus:outline-none focus:border-[#5B5CEB] bg-white font-bold text-slate-700 shadow-xs"
                             />
                           </div>
@@ -1212,6 +1342,113 @@ export default function BillingPaymentsPage({
           </div>
         );
       })()}
+
+      {showRecordModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white border border-slate-150 rounded-[24px] shadow-2xl p-6 w-full max-w-md text-left relative flex flex-col">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
+              <h3 className="text-lg font-black text-slate-800 tracking-tight">Record Payment</h3>
+              <button
+                onClick={handleCancelRecordPayment}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs font-semibold text-slate-600">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Paid By</label>
+                <select
+                  value={recordModalData.paidBy}
+                  onChange={(e) => setRecordModalData(prev => ({ ...prev, paidBy: e.target.value }))}
+                  className="w-full p-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#5B5CEB] bg-white text-slate-700 font-bold h-9"
+                >
+                  <option value="Resident">Resident</option>
+                  <option value="Owner">Owner</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Amount</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold">₹</span>
+                  <input
+                    type="number"
+                    value={recordModalData.amount}
+                    onChange={(e) => setRecordModalData(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                    className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#5B5CEB] text-slate-800 font-bold h-9"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Payment Mode</label>
+                <select
+                  value={recordModalData.mode}
+                  onChange={(e) => setRecordModalData(prev => ({ ...prev, mode: e.target.value }))}
+                  className="w-full p-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#5B5CEB] bg-white text-slate-700 font-bold h-9"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Payment Date</label>
+                <input
+                  type="date"
+                  value={recordModalData.date}
+                  onChange={(e) => setRecordModalData(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#5B5CEB] text-slate-800 font-bold h-9 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                  Transaction ID / Reference {recordModalData.mode === 'Cash' ? '(Optional)' : ''}
+                </label>
+                <input
+                  type="text"
+                  value={recordModalData.txId}
+                  onChange={(e) => setRecordModalData(prev => ({ ...prev, txId: e.target.value }))}
+                  placeholder={recordModalData.mode === 'Cash' ? 'e.g. CASH001' : 'e.g. UPI456789 / UTR / Txn ID'}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#5B5CEB] text-slate-800 font-bold h-9"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Remarks</label>
+                <input
+                  type="text"
+                  value={recordModalData.remarks}
+                  onChange={(e) => setRecordModalData(prev => ({ ...prev, remarks: e.target.value }))}
+                  placeholder="e.g. Paid in full"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#5B5CEB] text-slate-800 font-bold h-9"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 border-t border-slate-100 pt-3">
+              <button
+                onClick={handleCancelRecordPayment}
+                className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveRecordPayment}
+                className="px-5 py-2 bg-[#5B5CEB] hover:bg-[#494abf] text-white font-bold rounded-xl text-xs transition-colors shadow-xs"
+              >
+                Save Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
