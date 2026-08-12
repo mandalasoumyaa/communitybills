@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from services import ocr
 from pydantic import BaseModel
+from typing import Optional
 import crud, models
 import csv
 import io
@@ -405,6 +406,7 @@ class CSVCommitPayload(BaseModel):
     readings: list[CSVReadingItem]
     month: str
     rate_per_litre: float = 0.575
+    community_id: Optional[int] = None
 
 @router.post("/csv/preview")
 def preview_csv_readings(
@@ -584,15 +586,26 @@ def commit_csv_readings(
     Commit parsed readings from the preview table to the database.
     """
     try:
+        # Resolve tower_id dynamically for the selected community
+        tower = None
+        if payload.community_id is not None:
+            tower = db.query(models.Tower).filter(models.Tower.community_id == payload.community_id).first()
+        if not tower:
+            tower = db.query(models.Tower).first()
+        tower_id = tower.id if tower else 1
+
         processed_count = 0
         for item in payload.readings:
-            # Get apartment by number
+            # Get apartment by number and tower
             apt_num_str = normalize_apartment_number(item.apartment_number)
-            apt = crud.get_apartment_by_number(db, apartment_number=apt_num_str)
+            apt = db.query(models.Flat).filter(
+                models.Flat.number == apt_num_str,
+                models.Flat.tower_id == tower_id
+            ).first()
             if not apt:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Apartment/Flat number {item.apartment_number} does not exist in database."
+                    detail=f"Apartment/Flat number {item.apartment_number} does not exist under the active community tower in database."
                 )
             # Save reading
             crud.create_or_update_reading(
@@ -609,6 +622,8 @@ def commit_csv_readings(
             "message": f"Successfully imported {processed_count} readings for {payload.month}."
         }
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to commit readings: {str(e)}"

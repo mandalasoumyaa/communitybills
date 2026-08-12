@@ -51,6 +51,7 @@ export default function BillingFinancePage({
         initialFlatId={selectedFlatId}
         selectedMonth={sharedMonth}
         onBack={() => setIsViewingDetails(false)}
+        currentCommunityId={currentCommunityId}
       />
     );
   }
@@ -93,6 +94,7 @@ export default function BillingFinancePage({
             addLog={addLog}
             sharedMonth={sharedMonth}
             setSharedMonth={setSharedMonth}
+            currentCommunityId={currentCommunityId}
             onViewBill={(flatId) => {
               setSelectedFlatId(flatId);
               setIsViewingDetails(true);

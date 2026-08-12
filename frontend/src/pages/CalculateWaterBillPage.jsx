@@ -1348,7 +1348,7 @@ export default function CalculateWaterBillPage({
     if (!csvPreviewData || !csvPreviewData.preview_data) return
     showToast('💾 Saving imported readings to database...', 'success')
     try {
-       const res = await api.commitCSVReadings(csvPreviewData.preview_data, selectedMonth, parseFloat(costPerLitre) || 0.575)
+       const res = await api.commitCSVReadings(csvPreviewData.preview_data, selectedMonth, parseFloat(costPerLitre) || 0.575, currentCommunityId)
       showToast(`🎉 ${res.message}`)
       setActiveModal(null)
       setCsvPreviewData(null)

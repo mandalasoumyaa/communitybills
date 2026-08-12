@@ -193,10 +193,45 @@ export default function AddExpensePage({ onBack, onExpenseCreated, currentCommun
   };
 
   const handleSaveAllBatch = async () => {
+    // 1. Build the final batch: start with everything already in batchList
+    let finalBatch = [...batchList];
+
+    // 2. Check if the current form has a valid unsaved entry
+    const currentData = watch();
+    const currentAmt = parseFloat((currentData.amount || '').toString().replace(/,/g, '')) || 0;
+    if (currentAmt > 0) {
+      const finalVendor = currentData.vendor === 'Other' ? (currentData.customVendor || currentData.customEmployeeName || 'Other') : currentData.vendor;
+      const finalPaymentMode = currentData.paymentMode === 'Other' ? (currentData.customPaymentMode || 'Other') : currentData.paymentMode;
+      const finalPaidFromAccount = currentData.paidFromAccount === 'Other' ? (currentData.customPaidFromAccount || 'Other') : currentData.paidFromAccount;
+
+      const pendingEntry = {
+        id: Math.random().toString(36).substring(7),
+        category: selectedCategory,
+        amount: currentAmt,
+        date: currentData.date || new Date().toISOString().split('T')[0],
+        paymentMode: finalPaymentMode,
+        vendor: finalVendor,
+        referenceNumber: currentData.referenceNumber,
+        paidFromAccount: finalPaidFromAccount,
+        apartment: currentData.apartment,
+        description: currentData.description || currentData.notes || `${selectedCategory} expense`,
+        notes: currentData.notes,
+        recurring: currentData.recurring || false,
+        status: 'Paid',
+        rawValues: { ...currentData, category: selectedCategory }
+      };
+      finalBatch = [...finalBatch, pendingEntry];
+    }
+
+    if (finalBatch.length === 0) {
+      showToast('No expenses to save. Add at least one entry.', 'warning');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      await Promise.all(
-        batchList.map(item => {
+      const createdExpenses = await Promise.all(
+        finalBatch.map(item => {
           const payload = {
             ...item.rawValues,
             amount: item.amount,
@@ -211,33 +246,36 @@ export default function AddExpensePage({ onBack, onExpenseCreated, currentCommun
           return expenseService.createExpense(payload);
         })
       );
-      showToast('All batch expenses saved successfully.', 'success');
+      showToast(`${finalBatch.length} expenses saved successfully.`, 'success');
       
       const existing = JSON.parse(localStorage.getItem('recentExpenses') || '[]');
-      const newItems = batchList.map(item => ({
-        id: item.id,
-        category: item.category,
-        amount: item.amount,
-        date: item.date,
-        vendor: item.vendor,
-        paymentMode: item.paymentMode,
-        paidFromAccount: item.paidFromAccount,
-        description: item.description,
-        status: 'Paid'
-      }));
+      const newItems = finalBatch.map((item, idx) => {
+        const backendItem = createdExpenses && createdExpenses[idx];
+        return {
+          id: backendItem?.id || item.id,
+          category: item.category,
+          amount: item.amount,
+          date: item.date,
+          vendor: item.vendor,
+          paymentMode: item.paymentMode,
+          paidFromAccount: item.paidFromAccount,
+          description: item.description,
+          status: 'Paid'
+        };
+      });
       const updated = [...newItems, ...existing];
       localStorage.setItem('recentExpenses', JSON.stringify(updated));
       setRecentExpenses(updated);
       
       if (onExpenseCreated) {
-        onExpenseCreated(newItems[newItems.length - 1]);
+        onExpenseCreated(createdExpenses && createdExpenses.length > 0 ? createdExpenses : newItems);
       }
     } catch (error) {
       console.warn('API save failed for batch, fallback to local storage', error);
-      showToast('All batch expenses saved successfully.', 'success');
+      showToast(`${finalBatch.length} expenses saved successfully.`, 'success');
       
       const existing = JSON.parse(localStorage.getItem('recentExpenses') || '[]');
-      const newItems = batchList.map(item => ({
+      const newItems = finalBatch.map(item => ({
         id: item.id,
         category: item.category,
         amount: item.amount,
@@ -251,6 +289,9 @@ export default function AddExpensePage({ onBack, onExpenseCreated, currentCommun
       const updated = [...newItems, ...existing];
       localStorage.setItem('recentExpenses', JSON.stringify(updated));
       setRecentExpenses(updated);
+      if (onExpenseCreated) {
+        onExpenseCreated(newItems);
+      }
     } finally {
       setBatchList([]);
       setBatchEntry(false);

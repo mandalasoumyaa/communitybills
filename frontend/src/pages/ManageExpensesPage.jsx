@@ -32,15 +32,16 @@ export default function ManageExpensesPage({ expenses, setExpenses, currentCommu
         onBack={() => setShowAddForm(false)}
         currentCommunityId={currentCommunityId}
         onExpenseCreated={(newExp) => {
-          const formatted = {
-            id: newExp.id,
-            title: newExp.vendor || newExp.description || 'Expense',
-            amount: newExp.amount,
-            category: newExp.category.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
-            date: newExp.date,
-            notes: newExp.description || newExp.notes
-          };
-          setExpenses([formatted, ...expenses]);
+          const arr = Array.isArray(newExp) ? newExp : [newExp];
+          const formattedItems = arr.map(item => ({
+            id: item.id,
+            title: item.vendor || item.description || 'Expense',
+            amount: item.amount,
+            category: item.category.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            date: item.date,
+            notes: item.description || item.notes
+          }));
+          setExpenses(prev => [...formattedItems, ...prev]);
           setShowAddForm(false);
         }}
       />

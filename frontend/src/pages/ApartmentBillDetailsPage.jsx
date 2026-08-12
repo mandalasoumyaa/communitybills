@@ -21,13 +21,15 @@ import {
   ArrowRightLeft
 } from 'lucide-react';
 import * as api from '../services/communityApi';
+import { api as waterApi } from '../services/waterApi';
 
 export default function ApartmentBillDetailsPage({
   flatsList = [],
   waterReadings = [],
   initialFlatId,
   selectedMonth,
-  onBack
+  onBack,
+  currentCommunityId
 }) {
   const [readings, setReadings] = useState([]);
 
@@ -42,7 +44,11 @@ export default function ApartmentBillDetailsPage({
           const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           const monthName = months[parseInt(month, 10) - 1];
           const formattedMonth = `${monthName} ${year}`;
-          const res = await api.fetchWaterReadings(formattedMonth, '', 'All', 'All', 'apartment_number', 'asc', 0, 1000);
+          const res = await waterApi.getReadings({
+            month: formattedMonth,
+            community_id: currentCommunityId,
+            limit: 1000
+          });
           setReadings(res.items || []);
         }
       } catch (err) {
@@ -50,7 +56,7 @@ export default function ApartmentBillDetailsPage({
       }
     }
     loadWaterReadings();
-  }, [selectedMonth]);
+  }, [selectedMonth, currentCommunityId]);
 
   // Active Flat details calculation matching BillingPaymentsPage logic
   const billData = useMemo(() => {
@@ -97,79 +103,7 @@ export default function ApartmentBillDetailsPage({
     let paidByResident = 0;
     let paidByOwner = 0;
 
-    if (isOccupied) {
-      if (flat.number === 'A-101') {
-        carrierAmount = 0;
-        residentArrear = 0;
-        ownerArrear = 0;
-        paidByResident = currentMonthTotal;
-        paidByOwner = 0;
-      } else if (flat.number === 'A-102') {
-        carrierAmount = 400;
-        residentArrear = 250;
-        ownerArrear = 150;
-        paidByResident = 1200;
-        paidByOwner = 150;
-      } else if (flat.number === 'A-103') {
-        carrierAmount = 800;
-        residentArrear = 500;
-        ownerArrear = 300;
-        paidByResident = 0;
-        paidByOwner = 0;
-      } else if (flat.number === 'B-201') {
-        carrierAmount = 0;
-        residentArrear = 0;
-        ownerArrear = 0;
-        paidByResident = currentMonthTotal;
-        paidByOwner = 0;
-      } else if (flat.number === 'B-202') {
-        carrierAmount = 400;
-        residentArrear = 250;
-        ownerArrear = 150;
-        paidByResident = 1500;
-        paidByOwner = 0;
-      } else if (flat.number === 'B-203') {
-        carrierAmount = 800;
-        residentArrear = 500;
-        ownerArrear = 300;
-        paidByResident = 0;
-        paidByOwner = 0;
-      } else if (flat.number === 'C-301') {
-        carrierAmount = 0;
-        residentArrear = 0;
-        ownerArrear = 0;
-        paidByResident = 0;
-        paidByOwner = 0;
-      } else if (flat.number === 'C-302') {
-        carrierAmount = 600;
-        residentArrear = 400;
-        ownerArrear = 200;
-        paidByResident = 950;
-        paidByOwner = 2000;
-      } else {
-        // Dynamic calculations matching payments page
-        const numDigits = parseInt((flat.number || '').replace(/\D/g, '')) || 101;
-        if (numDigits % 3 === 0) {
-          carrierAmount = 0;
-          residentArrear = 0;
-          ownerArrear = 0;
-          paidByResident = currentMonthTotal;
-          paidByOwner = 0;
-        } else if (numDigits % 3 === 1) {
-          carrierAmount = 400;
-          residentArrear = 250;
-          ownerArrear = 150;
-          paidByResident = Math.round(currentMonthTotal * 0.4);
-          paidByOwner = 0;
-        } else {
-          carrierAmount = 800;
-          residentArrear = 500;
-          ownerArrear = 300;
-          paidByResident = 0;
-          paidByOwner = 0;
-        }
-      }
-    }
+    // No pre-seeded mock values
 
     // Calculations
     const totalPayable = currentMonthTotal + carrierAmount + residentArrear + ownerArrear;

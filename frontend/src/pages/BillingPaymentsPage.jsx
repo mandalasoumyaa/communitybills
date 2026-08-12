@@ -25,6 +25,7 @@ import {
   Printer
 } from 'lucide-react';
 import * as api from '../services/communityApi';
+import { api as waterApi } from '../services/waterApi';
 
 export default function BillingPaymentsPage({
   towersList = [],
@@ -34,6 +35,7 @@ export default function BillingPaymentsPage({
   addLog,
   sharedMonth,
   setSharedMonth,
+  currentCommunityId,
   onViewBill
 }) {
   const [selectedTower, setSelectedTower] = useState('All');
@@ -110,26 +112,11 @@ export default function BillingPaymentsPage({
 
 
   const getFlatInitialPayments = (flat) => {
-    const isCompleted = flat.status === 'Paid';
-    const waterCost = flat.waterCost || 0;
-    const maintenance = flat.maintenance || 3000;
-    
-    if (isCompleted) {
-      return {
-        resident: waterCost,
-        owner: maintenance,
-        history: [
-          { date: '08 Jan 2026', paidBy: 'Resident', mode: 'UPI', amount: waterCost, txId: 'UPI456789', remarks: '--' },
-          { date: '09 Jan 2026', paidBy: 'Owner', mode: 'Bank Transfer', amount: maintenance, txId: 'TXN984562', remarks: '--' }
-        ]
-      };
-    } else {
-      return {
-        resident: 0,
-        owner: 0,
-        history: []
-      };
-    }
+    return {
+      resident: 0,
+      owner: 0,
+      history: []
+    };
   };
 
   const getFlatPaymentHistory = (flat) => {
@@ -362,7 +349,7 @@ export default function BillingPaymentsPage({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch water readings when selectedMonth changes
+  // Fetch water readings when selectedMonth or community changes
   useEffect(() => {
     async function loadWaterReadings() {
       try {
@@ -372,7 +359,11 @@ export default function BillingPaymentsPage({
           const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           const monthName = months[parseInt(month, 10) - 1];
           const formattedMonth = `${monthName} ${year}`;
-          const res = await api.fetchWaterReadings(formattedMonth, '', 'All', 'All', 'apartment_number', 'asc', 0, 1000);
+          const res = await waterApi.getReadings({
+            month: formattedMonth,
+            community_id: currentCommunityId,
+            limit: 1000
+          });
           setWaterReadings(res.items || []);
         }
       } catch (err) {
@@ -380,7 +371,7 @@ export default function BillingPaymentsPage({
       }
     }
     loadWaterReadings();
-  }, [selectedMonth]);
+  }, [selectedMonth, currentCommunityId]);
 
   // Synchronize month with BillingFinancePage sharedMonth
   useEffect(() => {

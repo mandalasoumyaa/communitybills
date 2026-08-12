@@ -84,11 +84,12 @@ export const api = {
     return response.data
   },
 
-  commitCSVReadings: async (readings, month, ratePerLitre = 0.575) => {
+  commitCSVReadings: async (readings, month, ratePerLitre = 0.575, communityId = null) => {
     const response = await client.post('/upload/csv/commit', {
       readings,
       month,
-      rate_per_litre: ratePerLitre
+      rate_per_litre: ratePerLitre,
+      community_id: communityId
     })
     return response.data
   },
